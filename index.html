@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PAMI Thursday Walk</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet.snakeanim@0.2.0/L.Polyline.SnakeAnim.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f8f8f8; --text-color: #2c3e50; --subtext-color: #7f8c8d; --accent-color: #e67e22; --surface-color: #ffffff; --shadow-color: rgba(0, 0, 0, 0.1);
+        }
+        body.dark-mode {
+            --bg-color: #1a1a1a; --text-color: #ecf0f1; --subtext-color: #95a5a6; --accent-color: #f39c12; --surface-color: #2c3e50; --shadow-color: rgba(0, 0, 0, 0.4);
+        }
+        body { display: flex; flex-direction: column; height: 100vh; padding: 0; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-color); }
+
+        #splash-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--bg-color); display: flex; align-items: center; justify-content: center; z-index: 20000; opacity: 1; transition: opacity 0.8s ease-out; }
+        #splash-screen.hidden { opacity: 0; pointer-events: none; }
+        #splash-screen img { animation: fadeInScale 1.5s ease-out forwards; }
+        @keyframes fadeInScale { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+
+        #header { background-color: var(--surface-color); padding: 12px 10px; text-align: center; box-shadow: 0 2px 5px var(--shadow-color); z-index: 1000; flex-shrink: 0; }
+        #header h1 { margin: 0 0 5px 0; font-size: 1.4em; }
+        #header p { margin: 0 0 3px 0; font-size: 0.9em; color: var(--subtext-color); }
+        #totalRouteLength { font-weight: bold; color: var(--accent-color); }
+        
+        #map { flex-grow: 1; width: 100vw; z-index: 1; }
+        .dark-mode .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
+        .leaflet-tooltip { background-color: var(--surface-color) !important; color: var(--text-color) !important; border-color: var(--accent-color) !important; }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background-color: var(--surface-color) !important; color: var(--text-color) !important; }
+
+        .leaflet-bar button { background-color: var(--surface-color) !important; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #ddd; }
+        .leaflet-bar button:hover { background-color: #f4f4f4 !important; }
+        .dark-mode .leaflet-bar button { background-color: var(--surface-color) !important; border-bottom-color: #4a6fa5; }
+        .dark-mode .leaflet-bar button:hover { background-color: #3e5a81 !important; }
+        .leaflet-bar button svg { color: var(--text-color); width: 20px; height: 20px; }
+        
+        #stats-container { position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--surface-color); padding: 15px; box-shadow: 0 -2px 10px var(--shadow-color); z-index: 1000; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 15px; font-size: 0.9em; margin-bottom: 8px; }
+        .stats-grid div span { font-weight: bold; }
+        #total-actual-distance { text-align: right; color: var(--accent-color); }
+        #progress-bar-container { grid-column: 1 / -1; background-color: #e0e0e0; border-radius: 10px; height: 10px; overflow: hidden; margin-top: 4px; }
+        .dark-mode #progress-bar-container { background-color: #555; }
+        #progress-bar { width: 0%; height: 100%; background-color: var(--accent-color); border-radius: 10px; transition: width 0.5s linear; }
+        
+        #start-button { width: 100%; padding: 12px; border: none; background-color: #28a745; color: white; font-weight: bold; font-size: 1.2em; border-radius: 8px; cursor: pointer; }
+        #start-button:hover { background-color: #218838; }
+        #share-button { display: flex; align-items: center; justify-content: center; width: 100%; padding: 10px; margin-top: 10px; border: none; background-color: #25D366; color: white; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 1em; }
+        #share-button svg { width: 20px; height: 20px; margin-right: 8px; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="splash-screen"><img src="images/logo.png" alt="Logo Kegiatan" width="150" height="131"></div>
+    <div id="header">
+        <h1>PAMI Thursday Walk</h1>
+        <p>11 September 2025 - Start at 7:30am</p>
+        <p>Total route (est): <span id="totalRouteLength">0.00</span> km.</p>
+    </div>
+    <div id="map"></div>
+    <div id="stats-container">
+        <button id="start-button">MULAI JELAJAH</button>
+
+        <div id="stats-view" class="hidden">
+            <div class="stats-grid">
+                <div>Waktu Tempuh: <span id="elapsed-time">00:00:00</span></div>
+                <div id="total-actual-distance">Total Aktual: <span id="actual-distance">0.00 km</span></div>
+                <div>Ditempuh (di rute): <span id="distance-traveled">0.00 km</span></div>
+                <div>Sisa (di rute): <span id="distance-remaining">0.00 km</span></div>
+                <div id="progress-bar-container"><div id="progress-bar"></div></div>
+            </div>
+            <button id="share-button">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 12c0 1.76.46 3.43 1.29 4.9l-1.42 5.17 5.29-1.39c1.41.78 2.99 1.21 4.65 1.21 5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zM7.82 16.4c-.22-.4-.46-.42-.68-.42-.19 0-.43.03-.66.03-.26 0-.68.12-.99.38-.33.26-.99.98-1.21 1.68-.22.7-.22 1.39.05 2.02.26.63.99 1.59 1.96 2.56.98.98 2.23 2.01 3.82 2.63 1.59.63 2.91.56 3.99.33.98-.22 2.23-1.42 2.56-2.67.33-1.25.33-2.32.22-2.56-.11-.22-.43-.33-.91-.56-.48-.22-2.23-1.1-2.56-1.21-.33-.11-.63-.16-.91.16-.28.33-.99 1.21-1.21 1.45-.22.26-.43.28-.78.11-.33-.16-1.59-.58-3.02-1.85-.98-.88-1.74-1.96-1.96-2.32-.22-.35-.01-.56.16-.73.16-.16.33-.43.48-.63.16-.22.22-.35.33-.58.11-.22 0-.43-.05-.53-.05-.11-.88-2.12-1.21-2.91-.3-.78-.6-.68-.81-.68z"/></svg>
+                Kirim Data ke WA
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const geojsonData = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"name":"Pintu belakang TPU Karet Bivak","marker-color":"#ff0000"},"geometry":{"type":"Point","coordinates":[106.813687,-6.20465]}},{"type":"Feature","properties":{"name":"Rute 3","stroke":"#808000","stroke-width":5},"geometry":{"type":"LineString","coordinates":[[106.815989,-6.200866],[106.81516,-6.200669],[106.815189,-6.201403],[106.815307,-6.201449],[106.815404,-6.201531],[106.815465,-6.201641],[106.815999,-6.203356],[106.815773,-6.203378],[106.815561,-6.203375]]}},{"type":"Feature","properties":{"name":"Gerbang TPU Karet Bivak","marker-color":"#ff0000"},"geometry":{"type":"Point","coordinates":[106.815669,-6.203325]}},{"type":"Feature","properties":{"name":"FINISH: Stasiun Karet"},"geometry":{"type":"Point","coordinates":[106.816026,-6.200878]}},{"type":"Feature","properties":{"name":"Rute 2","stroke":"#b88e65","stroke-width":5},"geometry":{"type":"LineString","coordinates":[[106.813702,-6.204638],[106.813805,-6.205341],[106.81363,-6.205367],[106.813738,-6.206453],[106.812156,-6.206538],[106.81215,-6.206786],[106.811999,-6.206782],[106.811852,-6.206801],[106.811719,-6.206833],[106.81159,-6.206861],[106.811455,-6.206935],[106.811597,-6.20718],[106.811888,-6.207555],[106.812000,-6.207673],[106.812054,-6.207826],[106.81209,-6.207919],[106.812121,-6.208186],[106.812658,-6.20874],[106.812383,-6.208797],[106.812039,-6.208974],[106.811854,-6.208704]]}},{"type":"Feature","properties":{"name":"Rute 1","stroke":"#ffd700","stroke-width":5},"geometry":{"type":"LineString","coordinates":[[106.811846,-6.208722],[106.811903,-6.208787],[106.812029,-6.208984],[106.812096,-6.209147],[106.812267,-6.209681],[106.812302,-6.209877],[106.812332,-6.210125],[106.812331,-6.21057],[106.812264,-6.211546],[106.812245,-6.21192],[106.811124,-6.212038],[106.811207,-6.213286],[106.811252,-6.213486],[106.811628,-6.214192],[106.8118,-6.214465],[106.812013,-6.214925],[106.812169,-6.215214],[106.812159,-6.215244],[106.812138,-6.215271],[106.812106,-6.215299],[106.812254,-6.215982],[106.813337,-6.215834],[106.813581,-6.216337],[106.813604,-6.216368],[106.813658,-6.216408],[106.81367,-6.21642],[106.813408,-6.216633]]}},{"type":"Feature","properties":{"name":"START: Taman Sentra BRI"},"geometry":{"type":"Point","coordinates":[106.813538,-6.216808]}},{"type":"Feature","properties":{"name":"Jakarta Notebook","marker-color":"#ff0000"},"geometry":{"type":"Point","coordinates":[106.811764,-6.208786]}},{"type":"Feature","properties":{"name":"TPU Karet Bivak","stroke":"#555555","stroke-width":2,"fill":"#555555","fill-opacity":0.5,"note":"TPU Karet Bivak merupakan tempat peristirahatan akhir bagi banyak tokoh bangsa dari berbagai bidang. Memiliki luas 16,2 hektare."},"geometry":{"type":"Polygon","coordinates":[[[106.81549,-6.203305],[106.8155,-6.202681],[106.815336,-6.201996],[106.815233,-6.201731],[106.815099,-6.201639],[106.814904,-6.201567],[106.813855,-6.201444],[106.813454,-6.201455],[106.811562,-6.201649],[106.811459,-6.202047],[106.811531,-6.202201],[106.811747,-6.202303],[106.811922,-6.202395],[106.812004,-6.202773],[106.811891,-6.203366],[106.811912,-6.20353],[106.811984,-6.203683],[106.811994,-6.203816],[106.812045,-6.203949],[106.81223,-6.204082],[106.812487,-6.204235],[106.812971,-6.204358],[106.813495,-6.204409],[106.814122,-6.204419],[106.81477,-6.204358],[106.815696,-6.204317],[106.81549,-6.203305]]]}}]};
+
+            setTimeout(() => { document.getElementById('splash-screen').classList.add('hidden'); }, 3000);
+
+            const map = L.map('map');
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+
+            function calculateDistance(coords) { return coords.reduce((t, p, i) => t + (i > 0 ? map.distance(p, coords[i-1]) : 0), 0) / 1000; }
+            
+            let finishCoords;
+            const routeLayers = L.featureGroup();
+            const geoJsonLayer = L.geoJSON(geojsonData, {
+                style: f => ({ color: f.properties.stroke || '#3388ff', weight: 5, opacity: 0.8, fillOpacity: 0.2 }),
+                onEachFeature: (f, l) => {
+                    if (f.properties.name) {
+                        let content = f.properties.name;
+                        if (f.geometry.type === 'LineString') {
+                            content += `<br><b>Jarak: ${calculateDistance(l.getLatLngs()).toFixed(2)} km</b>`;
+                            routeLayers.addLayer(l);
+                        }
+                        l.bindTooltip(content);
+                    }
+                    if (f.properties.note) l.bindPopup(`<b>${f.properties.name}</b><p>${f.properties.note}</p>`);
+                },
+                pointToLayer: (f, l) => {
+                    if (f.properties.name?.startsWith('FINISH')) {
+                        finishCoords = l;
+                    }
+                    return L.marker(l, { icon: (f.properties.name?.startsWith('START') || f.properties.name?.startsWith('FINISH')) ? new L.Icon.Default() : L.divIcon({ className: 'c-div-icon', html: `<div style="background-color:${f.properties['marker-color']};width:15px;height:15px;border-radius:50%;border:2px solid white;"></div>` }) });
+                }
+            }).addTo(map);
+            
+            const totalRouteDistance = routeLayers.getLayers().reduce((t, l) => t + calculateDistance(l.getLatLngs()), 0);
+            document.getElementById('totalRouteLength').textContent = totalRouteDistance.toFixed(2);
+            document.getElementById('distance-remaining').textContent = `${totalRouteDistance.toFixed(2)} km`;
+
+            let initialBounds = routeLayers.getBounds().pad(0.15);
+            map.fitBounds(initialBounds);
+            setTimeout(() => { routeLayers.snakeIn({ snakingSpeed: 40 }); }, 1000);
+
+            L.Control.CustomButtons = L.Control.extend({
+                onAdd: function() {
+                    const c = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+                    const homeBtn = L.DomUtil.create('button', '', c);
+                    homeBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8h5z"/></svg>`;
+                    homeBtn.title = 'Kembali ke tampilan awal';
+                    L.DomEvent.on(homeBtn, 'click', () => map.fitBounds(initialBounds));
+                    
+                    const themeBtn = L.DomUtil.create('button', '', c);
+                    themeBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.31 0-6-2.69-6-6 0-1.82.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>`;
+                    themeBtn.title = 'Ubah Tema';
+                    L.DomEvent.on(themeBtn, 'click', () => {
+                        document.body.classList.toggle('dark-mode');
+                        themeBtn.innerHTML = document.body.classList.contains('dark-mode') ? `<svg viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.64 5.64c.39.39 1.02.39 1.41 0s.39-1.02 0-1.41L5.64 2.81c-.39-.39-1.02-.39-1.41 0s-.39 1.02 0 1.41L5.64 5.64zm12.72 12.72c.39.39 1.02.39 1.41 0s.39-1.02 0-1.41l-1.41-1.41c-.39-.39-1.02-.39-1.41 0s-.39 1.02 0 1.41l1.41 1.41zM2.81 18.36c.39.39 1.02.39 1.41 0l1.41-1.41c.39-.39.39-1.02 0-1.41s-1.02-.39-1.41 0L2.81 16.95c-.39.39-.39 1.02 0 1.41zm14.14-14.14c.39.39 1.02.39 1.41 0l1.41-1.41c.39-.39.39-1.02 0-1.41s-1.02-.39-1.41 0L16.95 4.22c-.39.39-.39 1.02 0 1.41z"/></svg>` : `<svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.31 0-6-2.69-6-6 0-1.82.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>`;
+                    });
+                    return c;
+                }
+            });
+            new L.Control.CustomButtons({ position: 'topleft' }).addTo(map);
+
+            let userMarker, watcherId, lastPos, totalActualDist = 0, maxOnRouteDist = 0, timerInterval, elapsedSeconds = 0, activityFinished = false;
+            const statsUi = {
+                statsView: document.getElementById('stats-view'),
+                startButton: document.getElementById('start-button'),
+                traveled: document.getElementById('distance-traveled'),
+                remaining: document.getElementById('distance-remaining'),
+                actual: document.getElementById('actual-distance'),
+                progress: document.getElementById('progress-bar'),
+                time: document.getElementById('elapsed-time'),
+                shareBtn: document.getElementById('share-button')
+            };
+            const fullRoutePolyline = L.polyline(routeLayers.getLayers().flatMap(l => l.getLatLngs()));
+            
+            statsUi.startButton.addEventListener('click', () => {
+                map.locate({setView: true, maxZoom: 18, enableHighAccuracy: true});
+            });
+
+            map.on('locationfound', e => {
+                if (!watcherId) {
+                    statsUi.startButton.classList.add('hidden');
+                    statsUi.statsView.classList.remove('hidden');
+                    
+                    const statsContainerHeight = document.getElementById('stats-container').offsetHeight;
+                    map.panBy([0, -statsContainerHeight], { animate: true }); // Geser peta ke atas
+                    
+                    startTimer();
+                    watcherId = navigator.geolocation.watchPosition(
+                        pos => updateProgress(L.latLng(pos.coords.latitude, pos.coords.longitude)), 
+                        handleLocationError, { enableHighAccuracy: true }
+                    );
+                }
+                updateProgress(e.latlng);
+            });
+            
+            function startTimer() {
+                if(timerInterval) clearInterval(timerInterval);
+                timerInterval = setInterval(() => {
+                    elapsedSeconds++;
+                    const h = Math.floor(elapsedSeconds / 3600).toString().padStart(2, '0');
+                    const m = Math.floor((elapsedSeconds % 3600) / 60).toString().padStart(2, '0');
+                    const s = (elapsedSeconds % 60).toString().padStart(2, '0');
+                    statsUi.time.textContent = `${h}:${m}:${s}`;
+                }, 1000);
+            }
+
+            function updateProgress(userLatlng) {
+                if (activityFinished || !finishCoords) return;
+                if (!userMarker) userMarker = L.marker(userLatlng).addTo(map).bindPopup('Posisi Anda');
+                else userMarker.setLatLng(userLatlng);
+
+                if (lastPos) totalActualDist += userLatlng.distanceTo(lastPos);
+                lastPos = userLatlng;
+                
+                const closestPoint = L.GeometryUtil.closest(map, fullRoutePolyline, userLatlng);
+                let currentOnRouteProgress = 0;
+                let allLatLngs = fullRoutePolyline.getLatLngs();
+                for (let i = 0; i < allLatLngs.length - 1; i++) {
+                    if (L.GeometryUtil.closest(map, L.polyline([allLatLngs[i], allLatLngs[i+1]]), closestPoint, true).equals(closestPoint)) {
+                        currentOnRouteProgress += map.distance(allLatLngs[i], closestPoint);
+                        break;
+                    } else {
+                        currentOnRouteProgress += map.distance(allLatLngs[i], allLatLngs[i+1]);
+                    }
+                }
+                
+                maxOnRouteDist = Math.max(maxOnRouteDist, currentOnRouteProgress);
+                const onRouteDistKm = maxOnRouteDist / 1000;
+                statsUi.traveled.textContent = `${onRouteDistKm.toFixed(2)} km`;
+                statsUi.remaining.textContent = `${Math.max(0, totalRouteDistance - onRouteDistKm).toFixed(2)} km`;
+                statsUi.actual.textContent = `${(totalActualDist / 1000).toFixed(2)} km`;
+                statsUi.progress.style.width = `${Math.min(100, (onRouteDistKm / totalRouteDistance) * 100)}%`;
+
+                if (userLatlng.distanceTo(finishCoords) < 25) {
+                    activityFinished = true;
+                    if(watcherId) navigator.geolocation.clearWatch(watcherId);
+                    if(timerInterval) clearInterval(timerInterval);
+                    alert("Selamat! Anda telah mencapai titik finish.");
+                    
+                    statsUi.startButton.classList.remove('hidden');
+                    statsUi.statsView.classList.add('hidden');
+                }
+            }
+
+            statsUi.shareBtn.addEventListener('click', () => {
+                const date = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const time = statsUi.time.textContent;
+                const distOnRoute = statsUi.traveled.textContent;
+                const distActual = statsUi.actual.textContent;
+
+                const message = `*Pencapaian PAMI Thursday Walk!* 🚶‍♂️\n\n` +
+                              `------------------------------------\n` +
+                              `*Tanggal:* ${date}\n` +
+                              `*Waktu Tempuh:* ${time}\n` +
+                              `*Jarak di Rute:* ${distOnRoute}\n` +
+                              `*Total Aktual:* ${distActual}\n` +
+                              `*Nama:*\n` +
+                              `------------------------------------\n\n` +
+                              `#PAMIWalk #JakartaWalkingTour\n\n` +
+                              `_[Data untuk diolah: ${date}|${time}|${distOnRoute.replace(' km','')}|${distActual.replace(' km','')}|NAMA_DI_SINI]_`;
+
+                const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
+                window.open(whatsappUrl, '_blank');
+            });
+            
+            function handleLocationError(e) { alert(`Error ${e.code}: ${e.message}`); }
+            map.on('locationerror', handleLocationError);
+        });
+    </script>
+</body>
+</html>
